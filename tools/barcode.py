@@ -23,6 +23,7 @@ def search_by_barcode(barcode: str) -> str:
     )
 
     if not results:
+        print(f"[barcode] '{barcode}' 未找到")
         return f"条码 {barcode} 未找到"
 
     lines = []

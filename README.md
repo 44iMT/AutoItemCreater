@@ -1,113 +1,120 @@
-# AutoItemCreater - 商品自动创建助手
+# AutoItemCreater
 
-基于 LangGraph + DeepSeek 的 AI Agent，用于总部商品库搜索、新品匹配、商品信息自动生成。
+门店新品 Excel → AI 搜索总部商品库 → 匹配/标准化 → 输出结果 Excel。
 
-## 架构
+## 项目结构
 
 ```
-agent.py          # Agent 入口，LLM + 工具注册
-config.py         # 全局配置（API Key、Qdrant、嵌入模型）
-builder.py        # 向量索引构建器，Excel → Qdrant
+config.py           全局配置（API Key、数据路径、Qdrant 连接）
+builder.py          总部商品入库：Excel → 向量嵌入 → Qdrant
+match_hq.py         商品匹配：判断门店品是否在总部已存在
+rename_by_hq.py     商品标准化：参考总部范本重命名/补全字段
+
 tools/
-  search.py       # 向量语义搜索总部商品库
-  barcode.py      # 条码精确匹配搜索
-  web_search.py   # 联网搜索（DeepSeek 内置）
-  excel.py        # Excel 读取/创建/追加
+  search.py         向量语义搜索（BGE 嵌入 + 重排）
+  barcode.py        条码精确匹配
+  web_search.py     DeepSeek 联网搜索
+  category.py       获取通用类目列表
+
+data/
+  通用类目.csv        前台类目数据
+```
+
+## 两个 Agent
+
+### match_hq — 商品匹配
+
+输入门店新品 Excel，逐行搜索总部库，判断每个品是否总部已有。
+
+```
+输入: 商品条码、商品名称、规格、售价...
+输出: 总部商品编码、总部商品名称、置信度、判定理由
+```
+
+### rename_by_hq — 商品标准化
+
+输入门店新品 Excel，先搜总部库找范本，再按总部风格标准化命名和补全规格、类目、重量等信息。
+
+```
+输入: 商品条码、商品名称、规格...
+输出: 标准化商品名称、售卖规格、前台类目、商品重量、重量单位、基本单位、范本商品
 ```
 
 ## 技术栈
 
 | 组件 | 技术 |
 |------|------|
-| LLM | DeepSeek V4（兼容 OpenAI API） |
-| Agent 框架 | LangGraph + langchain.agents.create_agent |
-| 向量数据库 | Qdrant（本地部署） |
-| 嵌入模型 | BAAI/bge-large-zh-v1.5（SiliconFlow） |
-| 重排模型 | BAAI/bge-reranker-v2-m3（SiliconFlow） |
-| Excel | openpyxl + xlrd |
+| LLM | DeepSeek V4 Flash |
+| Agent | LangGraph create_agent |
+| 向量库 | Qdrant（本地 localhost:6333） |
+| 嵌入 | BAAI/bge-large-zh-v1.5（SiliconFlow, 1024维） |
+| 重排 | BAAI/bge-reranker-v2-m3（SiliconFlow） |
+| 解析 | pandas + json5 |
 
 ## 快速开始
 
-### 环境要求
-
-- Python 3.10+
-- Qdrant 本地运行（默认 `http://localhost:6333`）
-
-### 安装
+### 环境
 
 ```bash
-pip install langgraph langchain langchain-openai openpyxl xlrd pandas \
-            qdrant-client llama-index-embeddings-openai
+pip install langgraph langchain langchain-openai pandas openpyxl json5 \
+            qdrant-client
 ```
 
-### 配置
-
-在 `config.py` 中修改：
-
-```python
-DEEPSEEK_KEY = "your-deepseek-api-key"
-DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
-GJ_KEY = "your-siliconflow-api-key"
-COLLECTION_NAME = "总部商品"
-```
+Qdrant 本地运行在 `http://localhost:6333`。
 
 ### 1. 构建向量索引
+
+把总部商品 Excel 导入 Qdrant，只跑一次：
 
 ```bash
 python builder.py
 ```
 
-读取总部商品 Excel → 清洗 → BGE 嵌入 → 存入 Qdrant。共约 32,970 条商品。
+### 2. 改配置
 
-### 2. 运行 Agent
+打开要跑的脚本，改顶部变量：
+
+```python
+INPUT_FILE  = r"门店新品.xlsx"    # 输入文件
+OUTPUT_FILE = r"结果.xlsx"         # 输出文件
+CONCURRENCY = 4                    # 并发数
+RETRY_TIMES = 3                    # 重试次数
+
+COLUMNS_MAP = {                    # 输入映射：Excel列名 → 提示词显示名
+    "商品条码": "商品条码",
+    "商品名称": "商品名称",
+    # Excel 中没有的列自动跳过，不放进提示词
+}
+OUT_COLUMNS = {                    # 输出定义：字段名 → 描述
+    "总部商品编码": "总部系统中的编码",
+    ...
+}
+```
+
+### 3. 运行
 
 ```bash
-python agent.py
+python match_hq.py      # 匹配
+python rename_by_hq.py  # 标准化
 ```
 
-修改 `agent.py` 中 `__main__` 的 `content` 变量来改变查询。
+## 工具
 
-## 工具说明
+| 工具 | 用途 |
+|------|------|
+| `search_by_barcode` | Qdrant payload 精确匹配条码 |
+| `search_products` | 向量语义搜索 + BGE 重排 |
+| `web_search` | DeepSeek 联网搜索 |
+| `get_categories` | 返回全部可用前台类目 |
 
-| 工具 | 功能 | 主要参数 |
-|------|------|----------|
-| `search_by_barcode` | 条码精确搜索总部商品 | `barcode` |
-| `search_products` | 向量语义搜索（含重排） | `query`, `limit`, `recall`, `rerank` |
-| `web_search` | 联网搜索商品信息 | `query`, `max_results` |
-| `read_excel` | 读取 Excel（.xls/.xlsx） | `file_path`, `sheet_name`, `max_rows` |
-| `create_excel` | 创建新 Excel 写入数据 | `file_path`, `sheet_name`, `headers`, `rows` |
-| `append_rows` | 追加数据到已有 Excel | `file_path`, `sheet_name`, `rows` |
+## 架构
 
-### 工具调用流程示例
+每个商品独立 Agent 对话（独立 thread_id），多线程并发执行，上下文不膨胀。
 
 ```
-用户: "门店新加了一批商品，Excel 在 D:/新品.xlsx，帮我判断是否总部已有"
-
-Agent 流程:
-  read_excel("D:/新品.xlsx")          → 读取新品列表
-  search_by_barcode("xxx")            → 条码查总部是否有
-  search_products("xxx 商品")         → 未匹配则向量搜索
-  web_search("xxx 价格 规格")        → 联网补充信息
-  create_excel("D:/结果.xlsx", ...)  → 导出结果
+pandas 读 Excel → 每行一个 Agent 调  → 收集结果 → pandas 写 Excel
+                    ├ 条码搜索
+                    ├ 向量搜索
+                    ├ 联网搜索
+                    └ 类目查询
 ```
-
-## 项目文件
-
-```
-AutoItemCreater/
-  agent.py          # Agent 主程序
-  config.py         # API Key、Qdrant、嵌入模型配置
-  builder.py        # Excel → Qdrant 索引构建
-  tools/
-    __init__.py     # 工具导出
-    search.py       # 向量搜索 + BGE 重排
-    barcode.py      # 条码搜索（Qdrant payload 匹配）
-    web_search.py   # DeepSeek 联网搜索
-    excel.py        # Excel 读写（xls/xlsx）
-```
-
-## 典型场景
-
-1. **新品匹配**：门店新品 Excel → 条码/向量搜索总部库 → 标记是否已有
-2. **商品信息补全**：给定品名+条码 → 联网搜索规格、价格 → 按总部格式生成
-3. **商品名称标准化**：非规范名称 → 参考总部风格 → 生成规范名称+规格+类目

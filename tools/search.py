@@ -72,6 +72,7 @@ def search_products(query: str, limit: int, recall: int, rerank: bool) -> str:
     ).points
 
     if not results:
+        print(f"[search] '{query}' 没找到匹配商品")
         return "没找到匹配商品"
 
     # 2. 排序
