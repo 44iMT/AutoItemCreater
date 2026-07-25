@@ -5,19 +5,21 @@
 ## 项目结构
 
 ```
-config.py           全局配置（API Key、数据路径、Qdrant 连接）
-builder.py          总部商品入库：Excel → 向量嵌入 → Qdrant
-match_hq.py         商品匹配：判断门店品是否在总部已存在
-rename_by_hq.py     商品标准化：参考总部范本重命名/补全字段
+config.example.py   配置模板（复制为 config.py 填入密钥）
+config.py            实际配置（gitignore，不提交）
+requirements.txt     Python 依赖
+builder.py           总部商品入库：Excel → 向量嵌入 → Qdrant
+match_hq.py          商品匹配：判断门店品是否在总部已存在
+rename_by_hq.py      商品标准化：参考总部范本重命名/补全字段
 
 tools/
-  search.py         向量语义搜索（BGE 嵌入 + 重排）
-  barcode.py        条码精确匹配
-  web_search.py     DeepSeek 联网搜索
-  category.py       获取通用类目列表
+  search.py          向量语义搜索（BGE 嵌入 + 重排）
+  barcode.py         条码精确匹配
+  web_search.py      DeepSeek 联网搜索
+  category.py        获取通用类目列表
 
 data/
-  通用类目.csv        前台类目数据
+  通用类目.csv         前台类目数据
 ```
 
 ## 两个 Agent
@@ -56,8 +58,7 @@ data/
 ### 环境
 
 ```bash
-pip install langgraph langchain langchain-openai pandas openpyxl json5 \
-            qdrant-client
+pip install -r requirements.txt
 ```
 
 Qdrant 本地运行在 `http://localhost:6333`。
@@ -118,3 +119,7 @@ pandas 读 Excel → 每行一个 Agent 调  → 收集结果 → pandas 写 Exc
                     ├ 联网搜索
                     └ 类目查询
 ```
+
+## 架构决策
+
+这个架构不是一步到位的，经历了 LLM+RAG → Agent → 上下文压缩 → 行间隔离 的完整演进。踩过的坑和收敛的经验记录在 [`经验总结-Agent批处理架构演进.md`](./经验总结-Agent批处理架构演进.md)。
