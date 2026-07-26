@@ -123,3 +123,9 @@ pandas 读 Excel → 每行一个 Agent 调  → 收集结果 → pandas 写 Exc
 ## 架构决策
 
 这个架构不是一步到位的，经历了 LLM+RAG → Agent → 上下文压缩 → 行间隔离 的完整演进。踩过的坑和收敛的经验记录在 [`经验总结-Agent批处理架构演进.md`](./经验总结-Agent批处理架构演进.md)。
+
+## 相关文章
+
+- [Agent 批处理中上下文压缩为何失败](https://blog.csdn.net/AELimit/article/details/163190245)
+- [给 Agent 的工具加了默认参数，它反而更笨了](https://blog.csdn.net/AELimit/article/details/163190791)
+- [从 LLM-only 到 Agent：一个商超项目的架构选型](https://blog.csdn.net/AELimit/article/details/163208331)
