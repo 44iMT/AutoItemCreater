@@ -60,7 +60,7 @@ LLM 随意发挥             LLM 倾向保守
 
 ---
 
-## 第二幕：Agent 模式探索（AutoItemCreater）
+## 第二幕：Agent 模式探索（AutoItemCreator）
 
 将 LLM-only 改为 Agent 模式后，system prompt 从 200+ 字压缩到不足 100 字：
 

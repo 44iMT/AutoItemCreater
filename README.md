@@ -1,4 +1,4 @@
-# AutoItemCreater
+# AutoItemCreator
 
 门店新品 Excel → AI 搜索总部商品库 → 匹配/标准化 → 输出结果 Excel。
 
