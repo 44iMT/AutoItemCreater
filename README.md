@@ -9,8 +9,12 @@ config.example.py   配置模板（复制为 config.py 填入密钥）
 config.py            实际配置（gitignore，不提交）
 requirements.txt     Python 依赖
 builder.py           总部商品入库：Excel → 向量嵌入 → Qdrant
-match_hq.py          商品匹配：判断门店品是否在总部已存在
-rename_by_hq.py      商品标准化：参考总部范本重命名/补全字段
+
+tasks/
+  match_hq.py        商品匹配：判断门店品是否在总部已存在
+  rename_by_hq.py    商品标准化：参考总部范本重命名/补全字段
+  diff_hq.py         差异比较：比对门店与总部商品规格差异
+  category_by_hq.py  类目补全：为门店商品匹配前台类目
 
 tools/
   search.py          向量语义搜索（BGE 嵌入 + 重排）
@@ -22,7 +26,7 @@ data/
   通用类目.csv         前台类目数据
 ```
 
-## 两个 Agent
+## 四个 Agent
 
 ### match_hq — 商品匹配
 
@@ -40,6 +44,24 @@ data/
 ```
 输入: 商品条码、商品名称、规格...
 输出: 标准化商品名称、售卖规格、前台类目、商品重量、重量单位、基本单位、范本商品
+```
+
+### diff_hq — 差异比较
+
+输入门店商品 Excel，条码匹配总部后对比商品名称和售卖规格差异，标记规格异常。
+
+```
+输入: 商品条码、商品名称、售卖规格...
+输出: 总部商品编码、总部商品名称、总部售卖规格、相似程度、异常标记、判定理由
+```
+
+### category_by_hq — 类目补全
+
+输入门店商品 Excel，搜索总部范本并结合类目列表为商品匹配前台类目。
+
+```
+输入: 商品条码、商品名称、规格...
+输出: 商品条码、商品名称、前台类目、范本商品
 ```
 
 ## 技术栈
@@ -95,8 +117,10 @@ OUT_COLUMNS = {                    # 输出定义：字段名 → 描述
 ### 3. 运行
 
 ```bash
-python match_hq.py      # 匹配
-python rename_by_hq.py  # 标准化
+python tasks/match_hq.py        # 匹配
+python tasks/rename_by_hq.py    # 标准化
+python tasks/diff_hq.py         # 差异比较
+python tasks/category_by_hq.py  # 类目补全
 ```
 
 ## 工具

@@ -1,18 +1,21 @@
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import json5
 from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 
 from config import DEEPSEEK_KEY, DEEPSEEK_BASE_URL
-from tools import search_products, search_by_barcode, web_search
+from tools import search_products, search_by_barcode, web_search, get_categories
 
 # ═══════════════════════════════════════════════════
 # 文件路径 & 并发配置
 # ═══════════════════════════════════════════════════
 INPUT_FILE = r"C:\Users\Administrator\Desktop\测试数据.xls"
-OUTPUT_FILE = r"C:\Users\Administrator\Desktop\匹配结果.xlsx"
-CONCURRENCY = 4      # 并发数
-RETRY_TIMES = 3      # 重试次数
+OUTPUT_FILE = r"C:\Users\Administrator\Desktop\重命名结果.xlsx"
+CONCURRENCY = 4  # 并发数
+RETRY_TIMES = 3  # 重试次数
 
 # ═══════════════════════════════════════════════════
 # 字段映射
@@ -26,11 +29,17 @@ COLUMNS_MAP = {
     "进货价": "进货价",
     "零售价": "零售价",
 }
+
 OUT_COLUMNS = {
-    "总部商品编码": "总部系统中的商品编码，未找到则为空字符串",
-    "总部商品名称": "总部系统中的商品名称，未找到则为空字符串",
-    "置信度": "匹配置信度，用百分数表示，如 95%",
-    "判定理由": "简要说明判断依据",
+    "商品条码": "原商品条码",
+    "商品名称": "原商品名称",
+    "标准化商品名称": "标准化后的商品名称",
+    "售卖规格": "根据范本和搜索生成的售卖规格",
+    "前台类目": "根据范本和搜索生成的前台类目",
+    "商品重量": "根据范本和搜索生成的商品重量",
+    "重量单位": "根据范本和搜索生成的重量单位",
+    "基本单位": "根据范本和搜索生成的基本单位",
+    "范本商品": "范本商品",
 }
 
 # ═══════════════════════════════════════════════════
@@ -45,19 +54,21 @@ llm = ChatOpenAI(
 
 agent = create_agent(
     llm,
-    [search_products, search_by_barcode, web_search],
+    [search_products, search_by_barcode, web_search, get_categories],
     system_prompt=r"""
-    你是电商商品查询助手,需要查询并判断门店商品是否是总部商品。
-    门店没有加入总部系统，商品命名和信息很不规范（可能缩写、错别字、口语化）。
-
-    ## 处理流程（每个品按以下步骤执行）
-    1. 先用 search_by_barcode 搜条码，总部有则直接认定是同一商品。
-    2. 条码没命中时，用 search_products 搜品名/货号，看总部是否有相似商品。
-    3. 还没找到就 web_search 联网搜该商品信息，再和总部商品比对。
-    4. 参考价格、规格等信息综合判断。
-
-    ## 输出要求
-    只输出 JSON，不要 markdown 包裹，不要任何解释文字。
+    你是商超商品标准化专家。门店商品命名不规范，请参考总部范本和联网搜索进行标准化。
+    
+    商品名称需要符合总部命名风格
+    总部商品范本的前台类目有的是时令类目，需要结合总部商品类目列表，要保证类目在里面
+    其他字段像 售卖规格 商品重量 重量单位 基本单位 请结合范本和联网搜索填充
+    
+    若商品条码精确匹配总部商品，直接使用总部商品信息填充，但前台类目还是需要保证在类目列表里
+    
+    最后再检查一下各字段是否符合上述要求，可以再次联网搜索，保证字段填充完整
+    
+    返回的字段结果都采用字符串类型的
+    
+    只输出 JSON，不要 markdown 包裹。
     """,
 )
 
@@ -74,10 +85,11 @@ if __name__ == "__main__":
     out_keys = list(OUT_COLUMNS.keys())
     json_template = "{\n" + "\n".join(f'  "{k}": "{v}"' for k, v in OUT_COLUMNS.items()) + "\n}"
 
+
     def process_one(i, row):
         fields = {COLUMNS_MAP[k]: row[k] for k in COLUMNS_MAP if k in row and row[k] not in ("nan", "None", "")}
         lines = "\n".join(f"- {label}: {value}" for label, value in fields.items())
-        prompt = f"""判断这个门店商品是否在总部存在：
+        prompt = f"""
         
         {lines}
         
@@ -89,9 +101,10 @@ if __name__ == "__main__":
             try:
                 result = agent.invoke(
                     {"messages": [HumanMessage(content=prompt)]},
-                    {"configurable": {"thread_id": f"item-{i+1}"}},
+                    {"configurable": {"thread_id": f"item-{i + 1}"}},
                 )
                 text = result["messages"][-1].content
+                # 提取最外层 {}，防止前面有"好的"等废话
                 s = text.find("{")
                 if s >= 0:
                     d, e = 1, s + 1
@@ -102,14 +115,15 @@ if __name__ == "__main__":
                     text = text[s:e]
                 out = json5.loads(text)
                 merged = {**fields, **{k: out.get(k, "") for k in out_keys}, "_idx": i}
-                print(f"[agent] [{i+1}/{len(rows)}] {fields.get('商品名称', '?')} → {out.get('判定理由', '?')}")
+                print(f"[agent] [{i + 1}/{len(rows)}] {fields.get('商品名称', '?')} → {out.get('标准化商品名称', '?')}")
                 return merged
             except Exception as e:
                 last_err = e
                 if attempt < RETRY_TIMES - 1:
                     time.sleep(2 ** attempt)
-        print(f"[agent] [{i+1}/{len(rows)}] {fields.get('商品名称', '?')} 重试{RETRY_TIMES}次仍失败: {last_err}")
+        print(f"[agent] [{i + 1}/{len(rows)}] {fields.get('商品名称', '?')} 重试{RETRY_TIMES}次仍失败: {last_err}")
         return None
+
 
     # 并发执行
     results = []
@@ -124,8 +138,7 @@ if __name__ == "__main__":
     results.sort(key=lambda r: r.pop("_idx"))
     print(f"[agent] 成功 {len(results)}/{len(rows)} 个品")
 
-    # 保存
-    input_headers = list(dict.fromkeys(v for k, v in COLUMNS_MAP.items() if k in rows[0]))
-    pd.DataFrame([[r.get(h, "") for h in input_headers + out_keys] for r in results],
-                 columns=input_headers + out_keys).to_excel(OUTPUT_FILE, index=False)
+    # 保存（只输出 OUT_COLUMNS 字段）
+    pd.DataFrame([[r.get(k, "") for k in out_keys] for r in results],
+                 columns=out_keys).to_excel(OUTPUT_FILE, index=False)
     print(f"[agent] 完成 → '{OUTPUT_FILE}'")
